@@ -19,7 +19,8 @@ data class LauncherConfig(
 )
 
 class LauncherConfigStore(
-    private val configPath: Path = Paths.get("mint-launcher.json")
+    private val configPath: Path = Paths.get("harebell.json"),
+    private val legacyConfigPath: Path = Paths.get("mint-launcher.json")
 ) {
     private val json = Json {
         prettyPrint = true
@@ -27,9 +28,14 @@ class LauncherConfigStore(
     }
 
     fun load(): LauncherConfig {
+        val pathToRead = when {
+            Files.exists(configPath) -> configPath
+            Files.exists(legacyConfigPath) -> legacyConfigPath
+            else -> null
+        }
         val loaded = try {
-            if (Files.exists(configPath)) {
-                val text = Files.readString(configPath)
+            if (pathToRead != null) {
+                val text = Files.readString(pathToRead)
                 json.decodeFromString(LauncherConfig.serializer(), text)
             } else {
                 LauncherConfig()

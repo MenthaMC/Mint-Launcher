@@ -37,11 +37,11 @@ object CliMain {
             return
         }
 
-        cliBanner("Mint Launcher")
+        cliBanner("Harebell")
         cliInfo("版本下载目录: $installDir")
         cliInfo("选择版本: ${releaseTagInput ?: "第一次启动默认选择最新"}")
         if (jarName.isNotBlank()) {
-            cliInfo("保存文件名: ${normalizeJarName(jarName, "mint.jar")}")
+            cliInfo("保存文件名: ${normalizeJarName(jarName, "harebell.jar")}")
         }
 
         val releases = try {
@@ -173,7 +173,7 @@ private fun chooseJarAsset(release: GithubRelease): GithubAsset? {
     val jars = release.assets.filter { it.name.endsWith(".jar", ignoreCase = true) }
     val preferred = jars.firstOrNull {
         val n = it.name.lowercase()
-        "paperclip" in n || "server" in n || "mint" in n
+        "paperclip" in n || "server" in n || "mint" in n || "harebell" in n
     }
     return preferred ?: jars.firstOrNull()
 }

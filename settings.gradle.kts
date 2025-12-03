@@ -1,1 +1,1 @@
-rootProject.name = "mint-launcher-compose"
+rootProject.name = "harebell"

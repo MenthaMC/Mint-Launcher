@@ -24,7 +24,7 @@ kotlin {
 }
 
 tasks.named<ShadowJar>("shadowJar") {
-    archiveBaseName.set("mint-launcher-cli")
+    archiveBaseName.set("harebell-cli")
     archiveClassifier.set("")
     archiveVersion.set("")
     mergeServiceFiles()

@@ -19,6 +19,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.system.measureTimeMillis
 
+private const val USER_AGENT = "Harebell/1.0"
+
 @Serializable
 data class GithubAsset(
     val name: String,
@@ -58,7 +60,7 @@ class MintApiClient(
         val request = HttpRequest.newBuilder()
             .uri(URI.create(url))
             .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", "MintLauncher/1.0")
+            .header("User-Agent", USER_AGENT)
             .GET()
             .build()
 
@@ -94,7 +96,7 @@ class MintApiClient(
                 val req = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Accept", "application/octet-stream")
-                    .header("User-Agent", "MintLauncher/1.0")
+                    .header("User-Agent", USER_AGENT)
                     .header("Range", "bytes=0-${testRange - 1}")
                     .timeout(testTimeout)
                     .GET()
@@ -160,7 +162,7 @@ class MintApiClient(
         val request = HttpRequest.newBuilder()
             .uri(URI.create(url))
             .header("Accept", "application/octet-stream")
-            .header("User-Agent", "MintLauncher/1.0")
+            .header("User-Agent", USER_AGENT)
             .GET()
             .build()
 
@@ -210,7 +212,7 @@ class MintApiClient(
             val head = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .method("HEAD", HttpRequest.BodyPublishers.noBody())
-                .header("User-Agent", "MintLauncher/1.0")
+                .header("User-Agent", USER_AGENT)
                 .build()
             val response = httpClient.send(head, HttpResponse.BodyHandlers.discarding())
             if (response.statusCode() !in 200..299) return null
@@ -271,7 +273,7 @@ class MintApiClient(
                     val req = HttpRequest.newBuilder()
                         .uri(URI.create(url))
                         .header("Accept", "application/octet-stream")
-                        .header("User-Agent", "MintLauncher/1.0")
+                        .header("User-Agent", USER_AGENT)
                         .header("Range", "bytes=$start-${endExclusive - 1}")
                         .GET()
                         .build()
