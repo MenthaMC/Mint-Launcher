@@ -17,8 +17,11 @@ object CliMain {
     @JvmStatic
     fun main(args: Array<String>) {
         val configStore = LauncherConfigStore()
-        var config = LauncherConfigStore().load()
-        var repoTarget: RepoTarget? = null
+        var config = configStore.load()
+        val configSourcePath = configStore.configSourcePath()
+        val hasConfigFile = configSourcePath != null
+        val hasInstallProp = System.getProperty("installDir")?.isNotBlank() == true
+        val language = Language.fromCode(config.language) ?: promptLanguage()
         val releaseTagInput = System.getProperty("minecraftVersion")
             ?: config.lastSelectedReleaseTag
         val installDir = System.getProperty("installDir")
@@ -36,38 +39,35 @@ object CliMain {
         val repoName = System.getProperty("repoName")
             ?: config.repoName
 
-        if (repoOwner == null || repoName == null) {
-            repoTarget = RepoInit().init()
+        val repoTarget = if (repoOwner == null || repoName == null) {
+            RepoInit(language).init()
         } else {
-            repoTarget = RepoTarget(repoOwner, repoName)
+            RepoTarget(repoOwner, repoName)
         }
 
         val apiClient = GithubApiClient(repoTarget = repoTarget)
-
-        val hasConfigFile = configStore.hasExistingConfig()
-        val hasInstallProp = System.getProperty("installDir")?.isNotBlank() == true
-        val configSourcePath = configStore.configSourcePath()
         printIntro(
             repoUrl = REPO_URL,
             installDir = installDir,
             jarName = jarName,
-            showDir = hasConfigFile || hasInstallProp
+            showDir = hasConfigFile || hasInstallProp,
+            language = language
         )
         configSourcePath?.let {
-            cliInfo("已找到配置文件 / Configuration file found: ${it.toAbsolutePath()}")
+            cliInfo(tr(language, "已找到配置文件: ${it.toAbsolutePath()}", "Configuration file found: ${it.toAbsolutePath()}"))
         }
-            ?: cliInfo("未找到配置文件，将使用默认配置并生成 harebell.json / No configuration file found, will use default configuration and generate harebell.json")
+            ?: cliInfo(tr(language, "未找到配置文件，将使用默认配置并生成 harebell.json", "No configuration file found, will use default configuration and generate harebell.json"))
 
         if (installDir.isBlank()) {
-            cliError("缺少下载目录：请提供 -DinstallDir=目录 或在配置文件/参数中指定 / Missing download directory: Please provide -DinstallDir=directory or specify in config file/parameters")
+            cliError(tr(language, "缺少下载目录：请提供 -DinstallDir=目录 或在配置文件/参数中指定", "Missing download directory: Please provide -DinstallDir=directory or specify in config file/parameters"))
             return
         }
 
         val releases = try {
-            cliStep("获取 Release 列表... / Fetching Release list...")
+            cliStep(tr(language, "获取 Release 列表...", "Fetching Release list..."))
             apiClient.listReleases(limit = 50).filterNot { it.draft }
         } catch (e: Exception) {
-            cliError("获取 Release 列表失败 / Failed to fetch Release list: ${e.message}")
+            cliError(tr(language, "获取 Release 列表失败: ${e.message}", "Failed to fetch Release list: ${e.message}"))
             return
         }
 
@@ -76,15 +76,15 @@ object CliMain {
             normalizedInput != null && (it.tagName == releaseTagInput || it.tagName.stripLeadingV() == normalizedInput)
         } ?: releases.firstOrNull()
         if (release == null) {
-            cliError("未找到任何 Release / No Release found")
+            cliError(tr(language, "未找到任何 Release", "No Release found"))
             return
         }
         val releaseTag = release.tagName
-        cliInfo("最新版本 / Latest version: $releaseTag")
+        cliInfo(tr(language, "最新版本: $releaseTag", "Latest version: $releaseTag"))
 
         val asset = chooseJarAsset(release, repoTarget)
             ?: run {
-                cliError("该 Release 下没有 jar 资源，请检查 GitHub 页面 / No jar assets found in this Release, please check GitHub page")
+                cliError(tr(language, "该 Release 下没有 jar 资源，请检查 GitHub 页面", "No jar assets found in this Release, please check GitHub page"))
                 return
             }
 
@@ -96,18 +96,18 @@ object CliMain {
         if (Files.exists(target) && config.jarHash.isNotBlank()) {
             val currentHash = sha256(target)
             if (currentHash.equals(config.jarHash, ignoreCase = true)) {
-                cliInfo("本地 hash 与配置一致，跳过下载 / Local hash matches configuration, skipping download: $targetName")
+                cliInfo(tr(language, "本地 hash 与配置一致，跳过下载: $targetName", "Local hash matches configuration, skipping download: $targetName"))
                 needDownload = false
                 finalHash = currentHash
             } else {
-                cliInfo("本地 hash 与配置不一致，执行更新 / Local hash does not match configuration, performing update: $targetName")
+                cliInfo(tr(language, "本地 hash 与配置不一致，执行更新: $targetName", "Local hash does not match configuration, performing update: $targetName"))
             }
         }
 
         if (needDownload) {
             val proxyChoice = apiClient.resolveDownloadUrl(asset) { timing ->
                 val speedText = timing.bytesPerSec?.let { formatSpeed(it) } ?: "fail"
-                cliInfo("测速 / Speed test: ${timing.source} -> $speedText")
+                cliInfo(tr(language, "测速: ${timing.source} -> $speedText", "Speed test: ${timing.source} -> $speedText"))
             }
 
             try {
@@ -119,9 +119,11 @@ object CliMain {
                         val speed = t.bytesPerSec?.let { formatSpeed(it) } ?: "fail"
                         "${t.source}=$speed"
                     }
-                cliInfo("测速 / Speed test: $timingsText")
-                cliStep("下载 / Downloading: $targetName (源文件 / source file: ${asset.name})")
-                proxyChoice.proxyHost?.let { cliInfo("使用下载源: ${proxyChoice.source} -> $it / Using download source: ${proxyChoice.source} -> $it") }
+                cliInfo(tr(language, "测速: $timingsText", "Speed test: $timingsText"))
+                cliStep(tr(language, "下载: $targetName (源文件: ${asset.name})", "Downloading: $targetName (source file: ${asset.name})"))
+                proxyChoice.proxyHost?.let {
+                    cliInfo(tr(language, "使用下载源: ${proxyChoice.source} -> $it", "Using download source: ${proxyChoice.source} -> $it"))
+                }
                 apiClient.downloadAsset(
                     asset = asset,
                     target = target,
@@ -130,13 +132,13 @@ object CliMain {
                         val totalText = total?.let { "/ ${formatBytes(it)}" } ?: ""
                         val pct = total?.let { (downloaded * 100 / it).coerceIn(0, 100) }
                         val pctText = pct?.let { " ($it%)" } ?: ""
-                        cliProgress("下载进度 / Download progress: ${formatBytes(downloaded)}$totalText$pctText")
+                        cliProgress(tr(language, "下载进度: ${formatBytes(downloaded)}$totalText$pctText", "Download progress: ${formatBytes(downloaded)}$totalText$pctText"))
                     }
                 )
-                cliOk("下载完成 / Download completed: $targetName")
+                cliOk(tr(language, "下载完成: $targetName", "Download completed: $targetName"))
                 finalHash = sha256(target)
             } catch (e: Exception) {
-                cliError("下载失败 / Download failed: ${e.message}")
+                cliError(tr(language, "下载失败: ${e.message}", "Download failed: ${e.message}"))
                 return
             }
         }
@@ -147,6 +149,7 @@ object CliMain {
             maxMemory = mem,
             jarName = targetName,
             jarHash = finalHash ?: "",
+            language = language.code,
             lastSelectedReleaseTag = releaseTag,
             repoOwner = repoTarget.owner,
             repoName = repoTarget.repo
@@ -166,22 +169,22 @@ object CliMain {
         argsList += target.toAbsolutePath().toString()
         argsList += config.serverArgs.split(Regex("\\s+")).filter { it.isNotBlank() }
 
-        cliStep("启动 / Launching: ${argsList.joinToString(" ")}")
+        cliStep(tr(language, "启动: ${argsList.joinToString(" ")}", "Launching: ${argsList.joinToString(" ")}"))
         try {
             val pb = ProcessBuilder(argsList)
                 .directory(Paths.get(installDir).toFile())
                 .inheritIO()
             val proc = pb.start()
             val exit = proc.waitFor()
-            cliInfo("进程退出，代码=$exit / Process exited with code=$exit")
+            cliInfo(tr(language, "进程退出，代码=$exit", "Process exited with code=$exit"))
         } catch (e: Exception) {
-            cliError("启动失败 / Launch failed: ${e.message}")
+            cliError(tr(language, "启动失败: ${e.message}", "Launch failed: ${e.message}"))
         }
     }
 }
 
 @Suppress("UNUSED_PARAMETER")
-private fun printIntro(repoUrl: String, installDir: String, jarName: String, showDir: Boolean) {
+private fun printIntro(repoUrl: String, installDir: String, jarName: String, showDir: Boolean, language: Language) {
     val palette = if (ANSI_ENABLED) {
         listOf(
             "\u001B[38;5;45m",
@@ -219,9 +222,25 @@ private fun printIntro(repoUrl: String, installDir: String, jarName: String, sho
 
     println()
     val infoLines = mutableListOf<String>()
-    infoLines += accent("Harebell 更新程序已准备就绪 / Harebell Update Program Ready", "\u001B[38;5;183m")
-    infoLines += "了解更多 / Learn more: $REPO_URL"
+    infoLines += accent(tr(language, "Harebell 更新程序已准备就绪", "Harebell Update Program Ready"), "\u001B[38;5;183m")
+    infoLines += tr(language, "了解更多: $repoUrl", "Learn more: $repoUrl")
     printBox(infoLines)
+}
+
+private fun promptLanguage(): Language {
+    while (true) {
+        println("请选择语言 / Please select a language:")
+        println("1. 中文")
+        println("2. English")
+        print("请输入选项编号 / Please enter the option number: ")
+        val raw = readlnOrNull()?.trim()
+        when (raw) {
+            "1" -> return Language.ZH_CN
+            "2" -> return Language.EN
+        }
+        Language.fromCode(raw)?.let { return it }
+        println("无效的选择 / Invalid selection")
+    }
 }
 
 private fun printBox(lines: List<String>) {
