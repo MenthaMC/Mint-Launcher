@@ -22,7 +22,7 @@ object CliMain {
         val hasConfigFile = configSourcePath != null
         val hasInstallProp = System.getProperty("installDir")?.isNotBlank() == true
         val language = Language.fromCode(config.language) ?: promptLanguage()
-        val releaseTagInput = System.getProperty("minecraftVersion")
+        val branchInput = System.getProperty("branch")
             ?: config.lastSelectedReleaseTag
         val installDir = System.getProperty("installDir")
             ?: config.installDir
@@ -71,15 +71,17 @@ object CliMain {
             return
         }
 
-        val normalizedInput = releaseTagInput?.trim()?.stripLeadingV()
-        val release = releases.firstOrNull {
-            normalizedInput != null && (it.tagName == releaseTagInput || it.tagName.stripLeadingV() == normalizedInput)
+        val normalizedBranch = branchInput?.trim()
+            ?.takeIf { it.isNotEmpty() && !it.equals("latest", ignoreCase = true) }
+        val release = normalizedBranch?.let { branch ->
+            releases.firstOrNull { it.targetCommitish?.equals(branch, ignoreCase = true) == true }
         } ?: releases.firstOrNull()
         if (release == null) {
             cliError(tr(language, "未找到任何 Release", "No Release found"))
             return
         }
         val releaseTag = release.tagName
+        val selectedBranch = release.targetCommitish?.takeIf { it.isNotBlank() } ?: normalizedBranch
         cliInfo(tr(language, "最新版本: $releaseTag", "Latest version: $releaseTag"))
 
         val asset = chooseJarAsset(release, repoTarget)
@@ -150,7 +152,7 @@ object CliMain {
             jarName = targetName,
             jarHash = finalHash ?: "",
             language = language.code,
-            lastSelectedReleaseTag = releaseTag,
+            lastSelectedReleaseTag = selectedBranch,
             repoOwner = repoTarget.owner,
             repoName = repoTarget.repo
         )
@@ -313,9 +315,6 @@ private fun formatSpeed(bytesPerSec: Long): String {
     val fmt = if (idx == 0 || value >= 100) "%.0f" else "%.1f"
     return fmt.format(value) + " " + units[idx]
 }
-
-private fun String.stripLeadingV(): String =
-    if (length >= 2 && (this[0] == 'v' || this[0] == 'V')) substring(1) else this
 
 private fun normalizeJarName(desired: String?, assetName: String): String {
     val clean = desired?.trim().orEmpty()

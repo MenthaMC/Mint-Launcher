@@ -34,6 +34,8 @@ data class GithubRelease(
     @SerialName("tag_name")
     val tagName: String,
     val name: String? = null,
+    @SerialName("target_commitish")
+    val targetCommitish: String? = null,
     val draft: Boolean = false,
     val prerelease: Boolean = false,
     @SerialName("published_at")
