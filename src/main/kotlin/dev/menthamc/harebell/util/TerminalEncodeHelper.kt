@@ -6,15 +6,21 @@ object TerminalEncodeHelper {
      fun detectAndSetEncoding() {
         val systemEncoding = Charset.defaultCharset().displayName()
         val terminalEncoding = System.getenv("LANG")?.substringBefore('.')?.takeIf { it.isNotBlank() }
+        val consoleCharset = runCatching { System.console()?.charset() }.getOrNull()
+        val consoleEncoding = consoleCharset?.displayName()
 
         val isUtf8 = systemEncoding.equals("UTF-8", ignoreCase = true) ||
-                terminalEncoding?.contains("UTF-8", ignoreCase = true) == true
+                terminalEncoding?.contains("UTF-8", ignoreCase = true) == true ||
+                consoleEncoding?.contains("UTF-8", ignoreCase = true) == true
 
-        if (isUtf8) {
-            System.setProperty("file.encoding", "UTF-8")
+        val targetCharset = consoleCharset ?: if (isUtf8) Charsets.UTF_8 else null
 
-            System.setOut(java.io.PrintStream(System.out, true, "UTF-8"))
-            System.setErr(java.io.PrintStream(System.err, true, "UTF-8"))
+        if (targetCharset != null) {
+            System.setProperty("file.encoding", targetCharset.name())
+            System.setProperty("sun.stdout.encoding", targetCharset.name())
+            System.setProperty("sun.stderr.encoding", targetCharset.name())
+            System.setOut(java.io.PrintStream(System.out, true, targetCharset))
+            System.setErr(java.io.PrintStream(System.err, true, targetCharset))
         }
     }
 }

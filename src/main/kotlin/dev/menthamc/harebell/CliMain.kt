@@ -1,4 +1,4 @@
-﻿package dev.menthamc.harebell
+package dev.menthamc.harebell
 
 import dev.menthamc.harebell.data.*
 import dev.menthamc.harebell.util.TerminalEncodeHelper
@@ -109,6 +109,8 @@ object CliMain {
 
         var finalHash = config.jarHash
         var needDownload = true
+        var updateDetected = false
+        val isFirstRun = config.lastSelectedReleaseTag.isNullOrBlank()
         if (Files.exists(target) && config.jarHash.isNotBlank()) {
             val currentHash = sha256(target)
             if (currentHash.equals(config.jarHash, ignoreCase = true)) {
@@ -117,10 +119,34 @@ object CliMain {
                 finalHash = currentHash
             } else {
                 cliInfo(tr(language, "本地 hash 与配置不一致，执行更新: $targetName", "Local hash does not match configuration, performing update: $targetName"))
+                updateDetected = true
             }
         }
 
         if (needDownload) {
+            if (updateDetected || isFirstRun) {
+                val base = config.lastSelectedReleaseTag
+                    ?.takeIf { it.isNotBlank() }
+                    ?: releases.drop(1).firstOrNull()?.tagName
+                if (!base.isNullOrBlank()) {
+                    try {
+                        cliStep(tr(language, "获取更新提交信息...", "Fetching update commits..."))
+                        val commits = apiClient.listCompareCommits(base, releaseTag, limit = 10)
+                        if (commits.isNotEmpty()) {
+                            cliInfo(tr(language, "更新提交信息:", "Update commits:"))
+                            commits.forEach { msg ->
+                                cliInfo(" - $msg")
+                            }
+                        } else {
+                            cliInfo(tr(language, "未找到提交信息", "No commit information found"))
+                        }
+                    } catch (e: Exception) {
+                        cliInfo(tr(language, "获取提交信息失败: ${e.message}", "Failed to fetch commit information: ${e.message}"))
+                    }
+                } else if (isFirstRun) {
+                    cliInfo(tr(language, "未找到提交信息", "No commit information found"))
+                }
+            }
             val proxyChoice = apiClient.resolveDownloadUrl(asset) { timing ->
                 val speedText = timing.bytesPerSec?.let { formatSpeed(it) } ?: "fail"
                 cliInfo(tr(language, "测速: ${timing.source} -> $speedText", "Speed test: ${timing.source} -> $speedText"))

@@ -7,6 +7,7 @@ import kotlinx.serialization.json.Json
 import java.io.IOException
 import java.io.RandomAccessFile
 import java.net.URI
+import java.net.URLEncoder
 import java.net.URL
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -43,6 +44,22 @@ data class GithubRelease(
     val assets: List<GithubAsset> = emptyList()
 )
 
+@Serializable
+data class GithubCompareResponse(
+    val commits: List<GithubCompareCommit> = emptyList()
+)
+
+@Serializable
+data class GithubCompareCommit(
+    val sha: String,
+    val commit: GithubCommitDetail? = null
+)
+
+@Serializable
+data class GithubCommitDetail(
+    val message: String? = null
+)
+
 class GithubApiClient(
     private val repoTarget: RepoTarget,
     private val proxySources: List<ProxySource> = ProxySource.values().toList()
@@ -74,6 +91,37 @@ class GithubApiClient(
             ListSerializer(GithubRelease.serializer()),
             response.body()
         )
+    }
+
+    @Throws(IOException::class, InterruptedException::class)
+    fun listCompareCommits(base: String, head: String, limit: Int = 20): List<String> {
+        if (base.equals(head, ignoreCase = true)) return emptyList()
+        val baseEnc = URLEncoder.encode(base, "UTF-8")
+        val headEnc = URLEncoder.encode(head, "UTF-8")
+        val url = "https://api.github.com/repos/${repoTarget.owner}/${repoTarget.repo}/compare/$baseEnc...$headEnc"
+        val request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .header("Accept", "application/vnd.github+json")
+            .header("User-Agent", USER_AGENT)
+            .GET()
+            .build()
+
+        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        if (response.statusCode() !in 200..299) {
+            throw IOException("GitHub Compare API 返回状态码 ${response.statusCode()}")
+        }
+
+        val data = json.decodeFromString(GithubCompareResponse.serializer(), response.body())
+        return data.commits.mapNotNull { item ->
+            val message = item.commit?.message
+                ?.lineSequence()
+                ?.firstOrNull()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: return@mapNotNull null
+            val shortSha = item.sha.take(7)
+            "$shortSha $message"
+        }.take(limit)
     }
 
     fun resolveDownloadUrl(
