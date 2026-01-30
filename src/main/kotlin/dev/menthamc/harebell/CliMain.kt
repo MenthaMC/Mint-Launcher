@@ -1,7 +1,11 @@
 package dev.menthamc.harebell
 
-import dev.menthamc.harebell.data.*
+import dev.menthamc.harebell.config.LauncherConfigStore
+import dev.menthamc.harebell.data.BranchInit
+import dev.menthamc.harebell.data.RepoInit
+import dev.menthamc.harebell.data.RepoTarget
 import dev.menthamc.harebell.util.TerminalEncodeHelper
+import dev.menthamc.harebell.util.api.github.*
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -47,8 +51,11 @@ object CliMain {
             RepoTarget(repoOwner, repoName)
         }
 
-/*        val branchToUse = if (branchInput == null) {
-            BranchInit(language, repoTarget).init()
+        val apiBase = GithubApiClient()
+        val apiClient1 = GithubApiClientStage1(api = apiBase, repoTarget = repoTarget)
+
+        val branchToUse = if (branchInput == null) {
+            BranchInit(language, apiClient1).init()
         } else {
             branchInput.trim().takeIf { it.isNotEmpty() && !it.equals("latest", ignoreCase = true) } ?: "latest"
         }
@@ -56,9 +63,9 @@ object CliMain {
         if (branchToUse == "unknown") {
             cliError(tr(language, "无法确定要使用的分支，退出", "Unable to determine branch to use, exiting"))
             return
-        }*/
+        }
 
-        val apiClient = GithubApiClient(repoTarget = repoTarget)
+        val apiClient2 = GithubApiClientStage2(repoTarget = repoTarget, api = apiBase)
         printIntro(
             repoUrl = REPO_URL,
             installDir = installDir,
@@ -94,20 +101,102 @@ object CliMain {
             return
         }
 
-        val releases = try {
+        val releases0 = try {
             cliStep(tr(language, "获取 Release 列表...", "Fetching Release list..."))
-            apiClient.listReleases(limit = 50).filterNot { it.draft }
+            getReleaseMsg(language)
+            apiClient2.listReleases(limit = 100).filterNot { it.draft }
         } catch (e: Exception) {
             cliError(tr(language, "获取 Release 列表失败: ${e.message}", "Failed to fetch Release list: ${e.message}"))
             return
         }
 
-//        val normalizedBranch = if (branchToUse != "latest") branchToUse else null
-        val normalizedBranch = branchInput?.trim()
-            ?.takeIf { it.isNotEmpty() && !it.equals("latest", ignoreCase = true) }
-        val release = normalizedBranch?.let { branch ->
-            releases.firstOrNull { it.targetCommitish?.equals(branch, ignoreCase = true) == true }
-        } ?: releases.firstOrNull()
+        val normalizedBranch = if (branchToUse != "latest") branchToUse else null
+        val minecraftVersion = extractVersionFromBranch(branchToUse)
+
+        var release: GithubRelease? = null
+        if (normalizedBranch != null) {
+            try {
+                var page = 1
+                var releases = releases0
+                while (true) {
+                    if (releases.isEmpty()) {
+                        break
+                    }
+                    val start0 = (page - 1) * 100 + 1
+                    val end0 = start0 + releases.size - 1
+                    cliInfo(
+                        tr(
+                            language,
+                            "正在检查第 $start0 到 $end0 个发行版是否存在符合的发行版...",
+                            "Checking if there are any matching releases from release $start0 to $end0..."
+                        )
+                    )
+
+                    release = releases.find {
+                        it.targetCommitish?.equals(normalizedBranch, ignoreCase = true) == true
+                                && (!repoTarget.tagCheck || minecraftVersion?.let { other -> it.tagName.contains(other) } == true)
+                    }
+
+                    if (release == null) {
+                        cliInfo(
+                            tr(
+                                language,
+                                "在 $start0 到 $end0 个发行版中不存在符合的发行版...",
+                                "No matching distribution was found in the $start0 to $end0 releases..."
+                            )
+                        )
+                    } else {
+                        break
+                    }
+
+                    // check if it has next page
+                    if (releases.size < 100) {
+                        break
+                    }
+
+                    page++
+
+                    getReleaseMsg(language, page)
+
+                    try {
+                        releases = apiClient2.listReleases(limit = 100, page = page).filterNot { it.draft }
+                    } catch (e: Exception) {
+                        cliError(
+                            tr(
+                                language,
+                                "获取发行版列表失败: ${e.message}",
+                                "Failed to fetch release list: ${e.message}"
+                            )
+                        )
+                        return
+                    }
+                }
+
+                if (release == null) {
+                    cliInfo(
+                        tr(
+                            language, "未找到基于分支 $normalizedBranch 提交的发行版，将退出...",
+                            "No release found based on commits from branch $normalizedBranch, exiting..."
+                        )
+                    )
+                    return
+                }
+            } catch (e: Exception) {
+                cliInfo(
+                    tr(
+                        language, "获取提交历史失败: ${e.message}",
+                        "Failed to fetch commit history: ${e.message}"
+                    )
+                )
+                return
+            }
+        }
+
+        // if not found, use latest (fallback)
+        if (release == null) {
+            release = releases0.firstOrNull()
+        }
+
         if (release == null) {
             cliError(tr(language, "未找到任何 Release", "No Release found"))
             return
@@ -163,11 +252,11 @@ object CliMain {
             if (updateDetected || isFirstRun) {
                 val base = config.lastSelectedReleaseTag
                     ?.takeIf { it.isNotBlank() }
-                    ?: releases.drop(1).firstOrNull()?.tagName
+                    ?: releases0.drop(1).firstOrNull()?.tagName
                 if (!base.isNullOrBlank()) {
                     try {
                         cliStep(tr(language, "获取更新提交信息...", "Fetching update commits..."))
-                        val commits = apiClient.listCompareCommits(base, releaseTag, limit = 10)
+                        val commits = apiClient2.listCompareCommits(base, releaseTag, limit = 10)
                         if (commits.isNotEmpty()) {
                             cliInfo(tr(language, "更新提交信息:", "Update commits:"))
                             commits.forEach { msg ->
@@ -189,7 +278,7 @@ object CliMain {
                     cliInfo(tr(language, "未找到提交信息", "No commit information found"))
                 }
             }
-            val proxyChoice = apiClient.resolveDownloadUrl(asset) { timing ->
+            val proxyChoice = apiClient2.resolveDownloadUrl(asset) { timing ->
                 val speedText = timing.bytesPerSec?.let { formatSpeed(it) } ?: "fail"
                 cliInfo(
                     tr(
@@ -226,7 +315,7 @@ object CliMain {
                         )
                     )
                 }
-                apiClient.downloadAsset(
+                apiClient2.downloadAsset(
                     asset = asset,
                     target = target,
                     downloadUrl = proxyChoice.url,
@@ -458,4 +547,22 @@ private fun cliProgress(msg: String) {
     if (msg == lastProgress) return
     lastProgress = msg
     println(msg)
+}
+
+private fun getReleaseMsg(language: Language, page: Int = 1) {
+    val start = (page - 1) * 100 + 1
+    val end = (page) * 100
+    cliInfo(
+        tr(
+            language,
+            "正在获取第 $start 到 $end 个发行版...",
+            "Fetching releases $start to $end ..."
+        )
+    )
+}
+
+private fun extractVersionFromBranch(branchName: String): String? {
+    val versionPattern = Regex("""(\d+\.\d+(?:\.\d+)?)""")
+    val match = versionPattern.find(branchName)
+    return match?.value
 }

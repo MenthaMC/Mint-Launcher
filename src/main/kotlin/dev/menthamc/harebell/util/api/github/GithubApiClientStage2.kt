@@ -1,15 +1,15 @@
-package dev.menthamc.harebell.data
+package dev.menthamc.harebell.util.api.github
 
+import dev.menthamc.harebell.data.RepoTarget
+import dev.menthamc.harebell.data.buildin.ProxySource
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
 import java.io.IOException
 import java.io.RandomAccessFile
 import java.net.URI
 import java.net.URL
 import java.net.URLEncoder
-import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.file.Files
@@ -18,8 +18,6 @@ import java.time.Duration
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
-
-private const val USER_AGENT = "Harebell/1.0"
 
 @Serializable
 data class GithubAsset(
@@ -60,34 +58,26 @@ data class GithubCommitDetail(
     val message: String? = null
 )
 
-class GithubApiClient(
+class GithubApiClientStage2(
     private val repoTarget: RepoTarget,
-    private val proxySources: List<ProxySource> = ProxySource.values().toList()
+    private val proxySources: List<ProxySource> = ProxySource.entries,
+    private val api: GithubApiClient
 ) {
-
-    private val httpClient = HttpClient.newBuilder()
-        .followRedirects(HttpClient.Redirect.NORMAL)
-        .connectTimeout(Duration.ofSeconds(3))
-        .build()
-
-    private val json = Json { ignoreUnknownKeys = true }
-
     @Throws(IOException::class, InterruptedException::class)
-    fun listReleases(limit: Int = 20): List<GithubRelease> {
-        val url = "https://api.github.com/repos/${repoTarget.owner}/${repoTarget.repo}/releases?per_page=$limit"
-        val request = HttpRequest.newBuilder()
+    fun listReleases(limit: Int = 20, page: Int = 1): List<GithubRelease> {
+        val url =
+            "https://api.github.com/repos/${repoTarget.owner}/${repoTarget.repo}/releases?per_page=$limit&page=$page"
+        val request = api.createBaseRequestBuilder()
             .uri(URI.create(url))
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", USER_AGENT)
             .GET()
             .build()
 
-        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        val response = api.getClient().send(request, HttpResponse.BodyHandlers.ofString())
         if (response.statusCode() !in 200..299) {
             throw IOException("GitHub Releases API 返回状态码 ${response.statusCode()}")
         }
 
-        return json.decodeFromString(
+        return api.getJson().decodeFromString(
             ListSerializer(GithubRelease.serializer()),
             response.body()
         )
@@ -99,19 +89,17 @@ class GithubApiClient(
         val baseEnc = URLEncoder.encode(base, "UTF-8")
         val headEnc = URLEncoder.encode(head, "UTF-8")
         val url = "https://api.github.com/repos/${repoTarget.owner}/${repoTarget.repo}/compare/$baseEnc...$headEnc"
-        val request = HttpRequest.newBuilder()
+        val request = api.createBaseRequestBuilder()
             .uri(URI.create(url))
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", USER_AGENT)
             .GET()
             .build()
 
-        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        val response = api.getClient().send(request, HttpResponse.BodyHandlers.ofString())
         if (response.statusCode() !in 200..299) {
             throw IOException("GitHub Compare API 返回状态码 ${response.statusCode()}")
         }
 
-        val data = json.decodeFromString(GithubCompareResponse.serializer(), response.body())
+        val data = api.getJson().decodeFromString(GithubCompareResponse.serializer(), response.body())
         return data.commits.mapNotNull { item ->
             val message = item.commit?.message
                 ?.lineSequence()
@@ -136,21 +124,19 @@ class GithubApiClient(
 
         val results = mutableListOf<ProxyTiming>()
         var best: Pair<Long, Pair<ProxySource, String>>? = null
-        var bestSpeed: Long = 0L
+        var bestSpeed = 0L
         val testRange = 128 * 1024
         val testTimeout = Duration.ofSeconds(2)
         options.forEach { (source, url) ->
             try {
                 val start = System.nanoTime()
-                val req = HttpRequest.newBuilder()
+                val req = api.createBaseRequestBuilder(true)
                     .uri(URI.create(url))
-                    .header("Accept", "application/octet-stream")
-                    .header("User-Agent", USER_AGENT)
                     .header("Range", "bytes=0-${testRange - 1}")
                     .timeout(testTimeout)
                     .GET()
-                    .build()
-                val resp = httpClient.send(req, HttpResponse.BodyHandlers.ofByteArray())
+
+                val resp = api.getClient().send(req.build(), HttpResponse.BodyHandlers.ofByteArray())
                 if (resp.statusCode() !in listOf(200, 206)) {
                     throw IOException("bad status ${resp.statusCode()}")
                 }
@@ -208,14 +194,12 @@ class GithubApiClient(
         onProgress: ((downloaded: Long, total: Long?, bytesPerSec: Long) -> Unit)?,
         totalBytesFromHead: Long? = null
     ) {
-        val request = HttpRequest.newBuilder()
+        val request = api.createBaseRequestBuilder(true)
             .uri(URI.create(url))
-            .header("Accept", "application/octet-stream")
-            .header("User-Agent", USER_AGENT)
             .GET()
             .build()
 
-        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream())
+        val response = api.getClient().send(request, HttpResponse.BodyHandlers.ofInputStream())
         if (response.statusCode() !in 200..299) {
             throw IOException("下载失败，状态码 ${response.statusCode()}")
         }
@@ -258,12 +242,11 @@ class GithubApiClient(
 
     private fun fetchContentLength(url: String): Long? {
         return try {
-            val head = HttpRequest.newBuilder()
+            val head = api.createBaseRequestBuilder(true)
                 .uri(URI.create(url))
                 .method("HEAD", HttpRequest.BodyPublishers.noBody())
-                .header("User-Agent", USER_AGENT)
                 .build()
-            val response = httpClient.send(head, HttpResponse.BodyHandlers.discarding())
+            val response = api.getClient().send(head, HttpResponse.BodyHandlers.discarding())
             if (response.statusCode() !in 200..299) return null
             response.headers()
                 .firstValue("Content-Length")
@@ -319,15 +302,13 @@ class GithubApiClient(
                 val start = idx * partSize
                 val endExclusive = if (idx == threadCount - 1) totalBytes else start + partSize
                 pool.submit {
-                    val req = HttpRequest.newBuilder()
+                    val req = api.createBaseRequestBuilder(true)
                         .uri(URI.create(url))
-                        .header("Accept", "application/octet-stream")
-                        .header("User-Agent", USER_AGENT)
                         .header("Range", "bytes=$start-${endExclusive - 1}")
                         .GET()
                         .build()
 
-                    val resp = httpClient.send(req, HttpResponse.BodyHandlers.ofInputStream())
+                    val resp = api.getClient().send(req, HttpResponse.BodyHandlers.ofInputStream())
                     if (resp.statusCode() !in listOf(200, 206)) {
                         throw IOException("分片下载失败，状态码 ${resp.statusCode()}")
                     }

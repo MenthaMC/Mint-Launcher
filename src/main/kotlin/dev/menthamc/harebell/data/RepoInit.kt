@@ -1,6 +1,7 @@
 package dev.menthamc.harebell.data
 
 import dev.menthamc.harebell.Language
+import dev.menthamc.harebell.data.buildin.Repos
 import dev.menthamc.harebell.tr
 
 class RepoInit(private val language: Language) {
@@ -8,7 +9,7 @@ class RepoInit(private val language: Language) {
 
     fun init(): RepoTarget {
         while (true) {
-            val repos = BuildInRepo.entries.toTypedArray()
+            val repos = Repos.entries.toTypedArray()
 
             println(msg("请选择要下载的仓库:", "Please select a repository to download:"))
             repos.forEachIndexed { index, buildInRepo ->
@@ -58,7 +59,7 @@ class RepoInit(private val language: Language) {
 
         val confirm = readlnOrNull()?.trim()?.lowercase()
         return if (confirm == "y" || confirm == "yes") {
-            RepoTarget(owner, repo)
+            RepoTarget(owner, repo, false)
         } else {
             println(msg("操作已取消", "Operation cancelled"))
             null

@@ -1,4 +1,4 @@
-﻿package dev.menthamc.harebell.data
+﻿package dev.menthamc.harebell.data.buildin
 
 enum class ProxySource(val baseUrl: String) {
     ORIGIN(""),

@@ -2,17 +2,14 @@ package dev.menthamc.harebell.data
 
 import dev.menthamc.harebell.Language
 import dev.menthamc.harebell.tr
-import kotlinx.serialization.json.Json
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
-import java.time.Duration
+import dev.menthamc.harebell.util.api.github.GithubApiClientStage1
+import kotlin.math.ceil
 
-class BranchInit(private val language: Language, private val repoTarget: RepoTarget) {
-    private val httpClient = HttpClient.newHttpClient()
-    private val json = Json { ignoreUnknownKeys = true }
-    private var allBranches: List<BranchInfo>? = null
+class BranchInit(
+    private val language: Language,
+    private val api: GithubApiClientStage1
+) {
+    private var allBranches: List<GithubApiClientStage1.BranchInfo>? = null
     private var defaultBranchName: String? = null
 
     private fun msg(zh: String, en: String) = tr(language, zh, en)
@@ -25,12 +22,16 @@ class BranchInit(private val language: Language, private val repoTarget: RepoTar
             return "unknown"
         }
 
-        val defaultBranch = getDefaultBranchName()
+        var defaultBranch = api.getDefaultBranchName(defaultBranchName)
+        if (defaultBranch == null) {
+            defaultBranch = findFallbackDefaultBranch(branches)
+        }
+
         var currentPage = 0
         val pageSize = 9
 
         while (true) {
-            val totalPages = Math.ceil(branches.size.toDouble() / pageSize).toInt()
+            val totalPages = ceil(branches.size.toDouble() / pageSize).toInt()
 
             displayPage(branches, currentPage, pageSize, defaultBranch, totalPages)
 
@@ -58,14 +59,15 @@ class BranchInit(private val language: Language, private val repoTarget: RepoTar
                 }
 
                 input.toIntOrNull() != null -> {
-                    val pageNum = input.toInt()
-                    val startIndex = currentPage * pageSize
-                    val endIndex = Math.min(startIndex + pageSize, branches.size)
-                    val pageBranches = branches.subList(startIndex, endIndex)
+                    val selectedNum = input.toInt()
 
-                    val branchIndex = pageNum - 1
-                    if (branchIndex in pageBranches.indices) {
-                        return pageBranches[branchIndex].name
+                    // 获取当前页面显示的分支列表（与显示逻辑保持一致）
+                    val displayedBranches =
+                        getCurrentPageDisplayBranches(branches, currentPage, pageSize, defaultBranch)
+
+                    val branchIndex = selectedNum - 1
+                    if (branchIndex in displayedBranches.indices) {
+                        return displayedBranches[branchIndex]
                     } else {
                         println(msg("无效的分支编号", "Invalid branch number"))
                     }
@@ -76,57 +78,17 @@ class BranchInit(private val language: Language, private val repoTarget: RepoTar
         }
     }
 
-    private fun getAllBranches(): List<BranchInfo> {
+    private fun getAllBranches(): List<GithubApiClientStage1.BranchInfo> {
         if (allBranches != null) {
             return allBranches!!
         }
 
-        val branches = fetchBranches()
+        val branches = api.fetchBranches()
         allBranches = branches
         return branches
     }
 
-    private fun getDefaultBranchName(): String {
-        if (defaultBranchName != null) {
-            return defaultBranchName!!
-        }
-
-        try {
-            val repoApiUrl = "https://api.github.com/repos/${repoTarget.owner}/${repoTarget.repo}"
-            val request = HttpRequest.newBuilder()
-                .uri(URI.create(repoApiUrl))
-                .timeout(Duration.ofSeconds(30))
-                .header("Accept", "application/vnd.github.v3+json")
-                .GET()
-                .build()
-
-            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-
-            if (response.statusCode() == 200) {
-                val responseBody = response.body()
-                val repoInfo = json.decodeFromString<RepoInfo>(responseBody)
-                defaultBranchName = repoInfo.defaultBranch
-                return defaultBranchName!!
-            } else {
-                println(
-                    msg(
-                        "获取仓库信息失败: HTTP ${response.statusCode()}",
-                        "Failed to fetch repository info: HTTP ${response.statusCode()}"
-                    )
-                )
-                val fallbackBranch = findFallbackDefaultBranch(getAllBranches())
-                defaultBranchName = fallbackBranch
-                return fallbackBranch
-            }
-        } catch (e: Exception) {
-            println(msg("获取默认分支时发生错误: ${e.message}", "Error fetching default branch: ${e.message}"))
-            val fallbackBranch = findFallbackDefaultBranch(getAllBranches())
-            defaultBranchName = fallbackBranch
-            return fallbackBranch
-        }
-    }
-
-    private fun findFallbackDefaultBranch(branches: List<BranchInfo>): String {
+    private fun findFallbackDefaultBranch(branches: List<GithubApiClientStage1.BranchInfo>): String {
         return branches.find { it.name.equals("main", ignoreCase = true) }?.name
             ?: branches.find { it.name.equals("master", ignoreCase = true) }?.name
             ?: branches.firstOrNull()?.name
@@ -134,7 +96,7 @@ class BranchInit(private val language: Language, private val repoTarget: RepoTar
     }
 
     private fun displayPage(
-        branches: List<BranchInfo>,
+        branches: List<GithubApiClientStage1.BranchInfo>,
         currentPage: Int,
         pageSize: Int,
         defaultBranch: String,
@@ -147,84 +109,42 @@ class BranchInit(private val language: Language, private val repoTarget: RepoTar
             )
         )
 
-        if (currentPage == 0) {
+        val displayedBranches = getCurrentPageDisplayBranches(branches, currentPage, pageSize, defaultBranch)
+
+        displayedBranches.forEachIndexed { index, branch ->
+            val isDefaultBranch = index == 0 && currentPage == 0 && branches.any { it.name == defaultBranch }
+            val prefix = if (isDefaultBranch) " (默认分支)" else ""
+            println("${index + 1}. ${branch}${prefix}")
+        }
+    }
+
+    private fun getCurrentPageDisplayBranches(
+        branches: List<GithubApiClientStage1.BranchInfo>,
+        currentPage: Int,
+        pageSize: Int,
+        defaultBranch: String
+    ): List<String> {
+        return if (currentPage == 0) {
             val defaultBranchInfo = branches.find { it.name == defaultBranch }
-            val otherBranches = branches.filter { it.name != defaultBranch }
+            val otherBranches = branches.filter { it.name != defaultBranch }.map { it.name }
 
             if (defaultBranchInfo != null) {
-                println("1. ${defaultBranchInfo.name} (默认分支)")
-                val remainingBranches = otherBranches.take(pageSize - 1)
-                remainingBranches.forEachIndexed { index, branch ->
-                    println("${index + 2}. ${branch.name}")
-                }
+                val result = mutableListOf(defaultBranchInfo.name)
+                result.addAll(otherBranches.take(pageSize - 1))
+                result
             } else {
-                val pageBranches = otherBranches.take(pageSize)
-                pageBranches.forEachIndexed { index, branch ->
-                    println("${index + 1}. ${branch.name}")
-                }
+                otherBranches.take(pageSize)
             }
         } else {
-            val otherBranches = branches.filter { it.name != defaultBranch }
-            val startIndex = currentPage * pageSize - 1
-            val endIndex = minOf(startIndex + pageSize, otherBranches.size)
+            val otherBranches = branches.filter { it.name != defaultBranch }.map { it.name }
+            val startIndex = (currentPage - 1) * pageSize + if (currentPage > 1) pageSize - 1 else 0
+            val endIndex = (startIndex + pageSize).coerceAtMost(otherBranches.size)
 
             if (startIndex < otherBranches.size) {
-                val pageBranches = otherBranches.subList(startIndex, endIndex)
-                pageBranches.forEachIndexed { index, branch ->
-                    println("${index + 1}. ${branch.name}")
-                }
-            }
-        }
-    }
-
-    private fun fetchBranches(): List<BranchInfo> {
-        try {
-            val apiUrl = "https://api.github.com/repos/${repoTarget.owner}/${repoTarget.repo}/branches"
-            val request = HttpRequest.newBuilder()
-                .uri(URI.create(apiUrl))
-                .timeout(Duration.ofSeconds(30))
-                .header("Accept", "application/vnd.github.v3+json")
-                .GET()
-                .build()
-
-            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-
-            if (response.statusCode() == 200) {
-                val responseBody = response.body()
-                val branches = json.decodeFromString<List<BranchInfo>>(responseBody)
-                return branches
+                otherBranches.subList(startIndex, endIndex)
             } else {
-                println(
-                    msg(
-                        "获取分支失败: HTTP ${response.statusCode()}",
-                        "Failed to fetch branches: HTTP ${response.statusCode()}"
-                    )
-                )
-                return emptyList()
+                emptyList()
             }
-        } catch (e: Exception) {
-            println(msg("获取分支时发生错误: ${e.message}", "Error fetching branches: ${e.message}"))
-            return emptyList()
         }
-    }
-
-    @kotlinx.serialization.Serializable
-    data class BranchInfo(
-        val name: String,
-        val commit: CommitInfo? = null
-    )
-
-    @kotlinx.serialization.Serializable
-    data class CommitInfo(
-        val sha: String? = null,
-        val url: String? = null
-    )
-
-    @kotlinx.serialization.Serializable
-    data class RepoInfo(
-        val default_branch: String
-    ) {
-        val defaultBranch: String
-            get() = default_branch
     }
 }

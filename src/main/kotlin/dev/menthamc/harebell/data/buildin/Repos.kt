@@ -1,6 +1,8 @@
-package dev.menthamc.harebell.data
+package dev.menthamc.harebell.data.buildin
 
-enum class BuildInRepo(val repoTarget: RepoTarget) {
+import dev.menthamc.harebell.data.RepoTarget
+
+enum class Repos(val repoTarget: RepoTarget) {
     Mint(RepoTarget("MenthaMC", "Mint")),
     Luminol(RepoTarget("LuminolMC", "Luminol")),
     LightingLuminol(RepoTarget("LuminolMC", "LightingLuminol")),

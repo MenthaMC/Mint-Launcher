@@ -1,4 +1,4 @@
-package dev.menthamc.harebell.data
+package dev.menthamc.harebell.config
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
