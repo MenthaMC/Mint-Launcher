@@ -112,7 +112,9 @@ class BranchInit(
         val displayedBranches = getCurrentPageDisplayBranches(branches, currentPage, pageSize, defaultBranch)
 
         displayedBranches.forEachIndexed { index, branch ->
-            val isDefaultBranch = index == 0 && currentPage == 0 && branches.any { it.name == defaultBranch }
+            val isDefaultBranch = currentPage == 0 &&
+                    branch != "latest" &&
+                    branches.indexOfFirst { it.name == branch } == branches.indexOfFirst { it.name == defaultBranch }
             val prefix = if (isDefaultBranch) " (默认分支)" else ""
             println("${index + 1}. ${branch}${prefix}")
         }
@@ -124,20 +126,23 @@ class BranchInit(
         pageSize: Int,
         defaultBranch: String
     ): List<String> {
+        val defaultBranchInfo = branches.find { it.name == defaultBranch }
         return if (currentPage == 0) {
-            val defaultBranchInfo = branches.find { it.name == defaultBranch }
             val otherBranches = branches.filter { it.name != defaultBranch }.map { it.name }
 
             if (defaultBranchInfo != null) {
-                val result = mutableListOf(defaultBranchInfo.name)
-                result.addAll(otherBranches.take(pageSize - 1))
+                val result = mutableListOf("latest", defaultBranchInfo.name)
+                result.addAll(otherBranches.take(pageSize - 2))
                 result
             } else {
-                otherBranches.take(pageSize)
+                val result = mutableListOf("latest")
+                result.addAll(otherBranches.take(pageSize - 1))
+                result
             }
         } else {
             val otherBranches = branches.filter { it.name != defaultBranch }.map { it.name }
-            val startIndex = (currentPage - 1) * pageSize + if (currentPage > 1) pageSize - 1 else 0
+            val startIndex =
+                (currentPage - 1) * pageSize + if (currentPage > 1) pageSize - (if (defaultBranchInfo != null) 2 else 1) else 0
             val endIndex = (startIndex + pageSize).coerceAtMost(otherBranches.size)
 
             if (startIndex < otherBranches.size) {

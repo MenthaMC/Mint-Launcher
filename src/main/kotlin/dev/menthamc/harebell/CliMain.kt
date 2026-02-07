@@ -110,11 +110,11 @@ object CliMain {
             return
         }
 
-        val normalizedBranch = if (branchToUse != "latest") branchToUse else null
-        val minecraftVersion = extractVersionFromBranch(branchToUse)
+        val normalizedBranch = if (branchToUse == "latest") null else branchToUse
 
         var release: GithubRelease? = null
         if (normalizedBranch != null) {
+            val minecraftVersion = extractVersionFromBranch(branchToUse)
             try {
                 var page = 1
                 var releases = releases0
@@ -190,16 +190,13 @@ object CliMain {
                 )
                 return
             }
-        }
-
-        // if not found, use latest (fallback)
-        if (release == null) {
+        } else {
             release = releases0.firstOrNull()
-        }
 
-        if (release == null) {
-            cliError(tr(language, "未找到任何 Release", "No Release found"))
-            return
+            if (release == null) {
+                cliError(tr(language, "未找到任何 Release", "No Release found"))
+                return
+            }
         }
         val releaseTag = release.tagName
         val selectedBranch = release.targetCommitish?.takeIf { it.isNotBlank() } ?: normalizedBranch
