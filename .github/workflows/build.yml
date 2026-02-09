@@ -1,4 +1,4 @@
-name: Auto Build
+name: HareBell CI
 
 on:
   push:
@@ -28,6 +28,13 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew --refresh-dependencies shadowJar
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: HareBell CI Artifacts
+          path: build/libs/harebell.jar
+
 
       - name : Setup Env
         run: |

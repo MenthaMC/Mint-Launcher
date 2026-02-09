@@ -20,6 +20,11 @@ kotlin {
     jvmToolchain(17)
 }
 
+val projectVersion = project.property("version") as String
+val gitHash = providers.exec {
+    commandLine("git", "rev-parse", "--short", "HEAD")
+}.standardOutput.asText.get().trim()
+
 tasks.named<ShadowJar>("shadowJar") {
     archiveBaseName.set("harebell")
     archiveClassifier.set("")
@@ -28,5 +33,6 @@ tasks.named<ShadowJar>("shadowJar") {
     minimize()
     manifest {
         attributes["Main-Class"] = "dev.menthamc.harebell.CliMainKt"
+        attributes["Implementation-Version"] = "$projectVersion-$gitHash"
     }
 }

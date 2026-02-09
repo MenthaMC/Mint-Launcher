@@ -2,6 +2,7 @@ package dev.menthamc.harebell.data
 
 import dev.menthamc.harebell.Language
 import dev.menthamc.harebell.tr
+import dev.menthamc.harebell.util.api.github.BranchInfo
 import dev.menthamc.harebell.util.api.github.GithubApiClientStage1
 import kotlin.math.ceil
 
@@ -9,7 +10,7 @@ class BranchInit(
     private val language: Language,
     private val api: GithubApiClientStage1
 ) {
-    private var allBranches: List<GithubApiClientStage1.BranchInfo>? = null
+    private var allBranches: List<BranchInfo>? = null
     private var defaultBranchName: String? = null
 
     private fun msg(zh: String, en: String) = tr(language, zh, en)
@@ -78,7 +79,7 @@ class BranchInit(
         }
     }
 
-    private fun getAllBranches(): List<GithubApiClientStage1.BranchInfo> {
+    private fun getAllBranches(): List<BranchInfo> {
         if (allBranches != null) {
             return allBranches!!
         }
@@ -88,7 +89,7 @@ class BranchInit(
         return branches
     }
 
-    private fun findFallbackDefaultBranch(branches: List<GithubApiClientStage1.BranchInfo>): String {
+    private fun findFallbackDefaultBranch(branches: List<BranchInfo>): String {
         return branches.find { it.name.equals("main", ignoreCase = true) }?.name
             ?: branches.find { it.name.equals("master", ignoreCase = true) }?.name
             ?: branches.firstOrNull()?.name
@@ -96,7 +97,7 @@ class BranchInit(
     }
 
     private fun displayPage(
-        branches: List<GithubApiClientStage1.BranchInfo>,
+        branches: List<BranchInfo>,
         currentPage: Int,
         pageSize: Int,
         defaultBranch: String,
@@ -121,7 +122,7 @@ class BranchInit(
     }
 
     private fun getCurrentPageDisplayBranches(
-        branches: List<GithubApiClientStage1.BranchInfo>,
+        branches: List<BranchInfo>,
         currentPage: Int,
         pageSize: Int,
         defaultBranch: String

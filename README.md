@@ -12,6 +12,7 @@ java \
   -DjavaPath=/usr/bin/java \         # 可选，默认 java
   -Dmem=4G \                         # 可选，填了才加 -Xms/-Xmx
   -DjvmArgs="-XX:+UseG1GC" \         # 可选，追加 JVM 参数
+  -Dtoken=ghp_xxx \                  # 可选，GitHub 访问令牌
   -jar build/libs/harebell.jar
 ```
 - 支持指定分支名，未指定默认分支最新 Release。

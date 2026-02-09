@@ -6,6 +6,26 @@ import java.net.URI
 import java.net.http.HttpResponse
 import java.time.Duration
 
+@Serializable
+data class BranchInfo(
+    val name: String,
+    val commit: CommitInfo? = null
+)
+
+@Serializable
+data class CommitInfo(
+    val sha: String? = null,
+    val url: String? = null
+)
+
+@Serializable
+data class RepoInfo(
+    val default_branch: String
+) {
+    val defaultBranch: String
+        get() = default_branch
+}
+
 class GithubApiClientStage1(
     private val api: GithubApiClient,
     private val repoTarget: RepoTarget
@@ -49,25 +69,5 @@ class GithubApiClientStage1(
             return repoInfo.defaultBranch
         }
         return null
-    }
-
-    @Serializable
-    data class BranchInfo(
-        val name: String,
-        val commit: CommitInfo? = null
-    )
-
-    @Serializable
-    data class CommitInfo(
-        val sha: String? = null,
-        val url: String? = null
-    )
-
-    @Serializable
-    data class RepoInfo(
-        val default_branch: String
-    ) {
-        val defaultBranch: String
-            get() = default_branch
     }
 }
